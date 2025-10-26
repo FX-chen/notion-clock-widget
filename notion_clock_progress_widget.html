@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clock · Year / Month / Week Progress</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #111111;
+      --muted: #666666;
+      --track: #e9e9e9;
+      --fill: #333333;
+      --radius: 999px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1115;
+        --fg: #f3f4f6;
+        --muted: #a1a1aa;
+        --track: #262a33;
+        --fill: #e5e7eb;
+      }
+    }
+
+    html, body {
+      height: 100%;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: ui-serif, Charter, "Times New Roman", Times, Georgia, serif;
+      display: grid;
+      place-items: center;
+    }
+
+    .wrap {
+      width: min(560px, 92vw);
+      padding: 28px 22px 32px;
+      border-radius: 12px;
+      box-sizing: border-box;
+    }
+
+    .clock {
+      font-size: clamp(40px, 12vw, 68px);
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-align: center;
+      margin: 0 0 22px;
+    }
+
+    .rows { display: grid; gap: 12px; }
+
+    .row {
+      display: grid;
+      grid-template-columns: 72px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 14px;
+    }
+
+    .label { color: var(--fg); opacity: .92; }
+    .value { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .track {
+      height: 10px;
+      width: 100%;
+      background: var(--track);
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+    }
+    .fill {
+      height: 100%;
+      width: 0%;
+      background: var(--fill);
+      border-radius: var(--radius);
+      transition: width .4s cubic-bezier(.22,.61,.36,1);
+    }
+
+    /* Optional subtle inset highlight like the screenshot */
+    .track:after {
+      content: "";
+      position: absolute; inset: 0;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.6), inset 0 -1px 0 rgba(0,0,0,.04);
+      border-radius: var(--radius);
+      pointer-events: none;
+    }
+
+    /* Make it look good when narrow */
+    @media (max-width: 420px) {
+      .row { grid-template-columns: 56px 1fr auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap" aria-live="polite">
+    <h1 class="clock" id="clock">00:00:00</h1>
+
+    <section class="rows">
+      <div class="row">
+        <div class="label">Year</div>
+        <div class="track"><div id="bar-year" class="fill"></div></div>
+        <div id="text-year" class="value">0/365</div>
+      </div>
+      <div class="row">
+        <div class="label">Month</div>
+        <div class="track"><div id="bar-month" class="fill"></div></div>
+        <div id="text-month" class="value">0/30</div>
+      </div>
+      <div class="row">
+        <div class="label">Week</div>
+        <div class="track"><div id="bar-week" class="fill"></div></div>
+        <div id="text-week" class="value">0/7</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- Utilities ---
+    const pad = (n) => String(n).padStart(2, '0');
+    const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+    const isLeapYear = (y) => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+
+    function dayOfYear(d) {
+      const start = new Date(d.getFullYear(), 0, 0);
+      const diff = d - start; // ms since day 0
+      return Math.floor(diff / 86400000); // 86_400_000 ms per day
+    }
+
+    // ISO-like weekday (Mon=1..Sun=7)
+    function isoWeekday(d) {
+      const wd = d.getDay();
+      return wd === 0 ? 7 : wd;
+    }
+
+    function update() {
+      const now = new Date();
+
+      // CLOCK
+      const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      document.getElementById('clock').textContent = time;
+
+      // YEAR
+      const y = now.getFullYear();
+      const doy = dayOfYear(now); // 1..365/366
+      const totalY = isLeapYear(y) ? 366 : 365;
+      const yearPct = ( ( (now - new Date(y,0,1)) / (new Date(y+1,0,1) - new Date(y,0,1)) ) * 100 );
+      document.getElementById('bar-year').style.width = `${yearPct}%`;
+      document.getElementById('text-year').textContent = `${doy}/${totalY}`;
+
+      // MONTH
+      const m = now.getMonth();
+      const dim = daysInMonth(y, m);
+      const dom = now.getDate();
+      const monthPct = ( ( (now - new Date(y,m,1)) / (new Date(y,m+1,1) - new Date(y,m,1)) ) * 100 );
+      document.getElementById('bar-month').style.width = `${monthPct}%`;
+      document.getElementById('text-month').textContent = `${dom}/${dim}`;
+
+      // WEEK (Mon..Sun) by day count; bar uses precise fraction of week elapsed
+      const wd = isoWeekday(now); // 1..7
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - (wd - 1));
+      weekStart.setHours(0,0,0,0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 7);
+      const weekPct = ((now - weekStart) / (weekEnd - weekStart)) * 100;
+      document.getElementById('bar-week').style.width = `${weekPct}%`;
+      document.getElementById('text-week').textContent = `${wd}/7`;
+    }
+
+    // Allow quick theming via URL params, e.g. ?fill=%23333&track=%23eee
+    (function applyParams(){
+      const p = new URLSearchParams(location.search);
+      const set = (k, css) => { if (p.has(k)) document.documentElement.style.setProperty(css, p.get(k)); };
+      set('bg', '--bg'); set('fg', '--fg'); set('muted', '--muted'); set('track', '--track'); set('fill', '--fill');
+    })();
+
+    update();
+    setInterval(update, 1000);
+  </script>
+</body>
+</html>
